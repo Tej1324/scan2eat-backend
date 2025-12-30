@@ -5,9 +5,9 @@ const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const http = require("http");
-const { Server } = require("socket.io");
 
 const Order = require("./models/Order");
+const initSocket = require("./socket");
 
 const app = express();
 const server = http.createServer(app);
@@ -15,22 +15,27 @@ const server = http.createServer(app);
 /* ================= CONFIG ================= */
 const PORT = process.env.PORT || 4000;
 
-/* ================= CORS (MUST BE FIRST) ================= */
+/* ================= CORS (VERY FIRST) ================= */
 const corsOptions = {
   origin: [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5500",
     "https://scan2eat-frontend.vercel.app",
     "https://scan2eat-cashier.netlify.app",
-    "https://scan2eat-kitchen.netlify.app"
+    "https://scan2eat-kitchen.netlify.app",
+    "http://localhost:5173"
   ],
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "x-access-token"],
-  credentials: false
+  allowedHeaders: ["Content-Type", "x-access-token"]
 };
 
 app.use(cors(corsOptions));
+
+/* ✅ HANDLE PREFLIGHT (EXPRESS 5 SAFE) */
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 /* ================= MIDDLEWARE ================= */
 app.use(express.json({ limit: "100kb" }));
@@ -43,19 +48,14 @@ const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 100
 });
-app.use("/api", apiLimiter);
+
+app.use("/api", (req, res, next) => {
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  apiLimiter(req, res, next);
+});
 
 /* ================= SOCKET.IO ================= */
-const io = new Server(server, {
-  cors: {
-    origin: corsOptions.origin,
-    methods: ["GET", "POST"]
-  }
-});
-
-io.on("connection", socket => {
-  console.log("🔌 Client connected:", socket.id);
-});
+const io = initSocket(server);
 
 /* ================= DB ================= */
 mongoose
@@ -97,7 +97,7 @@ app.post("/api/orders", async (req, res) => {
       return res.status(400).json({ error: "Invalid items" });
     }
 
-    const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+    const total = items.reduce((s, i) => s + i.price * i.qty, 0);
 
     const order = await Order.create({
       tableId,
@@ -116,8 +116,7 @@ app.post("/api/orders", async (req, res) => {
 
 /* GET ORDERS */
 app.get("/api/orders", async (req, res) => {
-  const { status } = req.query;
-  const filter = status ? { status } : {};
+  const filter = req.query.status ? { status: req.query.status } : {};
   const orders = await Order.find(filter).sort({ createdAt: 1 });
   res.json(orders);
 });
@@ -141,7 +140,7 @@ app.patch("/api/orders/:id", requireCashier, async (req, res) => {
   res.json(order);
 });
 
-/* HEALTH CHECK */
+/* HEALTH */
 app.get("/health", (_, res) => {
   res.json({ status: "ok" });
 });
