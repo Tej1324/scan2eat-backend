@@ -7,7 +7,7 @@ const rateLimit = require("express-rate-limit");
 const http = require("http");
 const { Server } = require("socket.io");
 
-const Order = require("./models/Order"); // adjust path if needed
+const Order = require("./models/Order");
 
 const app = express();
 const server = http.createServer(app);
@@ -15,26 +15,23 @@ const server = http.createServer(app);
 /* ================= CONFIG ================= */
 const PORT = process.env.PORT || 4000;
 
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:5500",
-  "https://scan2eat.netlify.app",
-  "https://scan2eat-cashier.netlify.app",
-  "https://scan2eat-kitchen.netlify.app"
-];
+/* ================= CORS (MUST BE FIRST) ================= */
+const corsOptions = {
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5500",
+    "https://scan2eat-frontend.vercel.app",
+    "https://scan2eat-cashier.netlify.app",
+    "https://scan2eat-kitchen.netlify.app"
+  ],
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "x-access-token"],
+  credentials: false
+};
 
-/* ================= CORS (FIXED) ================= */
-app.use(
-  cors({
-    origin: allowedOrigins,
-    credentials: true,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "x-access-token"]
-  })
-);
-
-app.options("*", cors());
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 /* ================= MIDDLEWARE ================= */
 app.use(express.json({ limit: "100kb" }));
@@ -47,13 +44,12 @@ const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 100
 });
-
 app.use("/api", apiLimiter);
 
 /* ================= SOCKET.IO ================= */
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: corsOptions.origin,
     methods: ["GET", "POST"]
   }
 });
@@ -112,7 +108,6 @@ app.post("/api/orders", async (req, res) => {
     });
 
     io.emit("order:new", order);
-
     res.status(201).json(order);
   } catch (err) {
     console.error("❌ Order error:", err);
@@ -128,7 +123,7 @@ app.get("/api/orders", async (req, res) => {
   res.json(orders);
 });
 
-/* UPDATE ORDER STATUS (CASHIER / KITCHEN) */
+/* UPDATE ORDER STATUS */
 app.patch("/api/orders/:id", requireCashier, async (req, res) => {
   const allowed = ["pending", "cooking", "ready", "completed"];
   const { status } = req.body;
@@ -138,15 +133,12 @@ app.patch("/api/orders/:id", requireCashier, async (req, res) => {
   }
 
   const order = await Order.findById(req.params.id);
-  if (!order) {
-    return res.status(404).json({ error: "Order not found" });
-  }
+  if (!order) return res.status(404).json({ error: "Order not found" });
 
   order.status = status;
   await order.save();
 
   io.emit("order:update", order);
-
   res.json(order);
 });
 
