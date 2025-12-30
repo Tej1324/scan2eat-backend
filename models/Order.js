@@ -4,15 +4,27 @@ const mongoose = require("mongoose");
 const ItemSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
+
   qty: {
     type: Number,
-    required: true
+    required: true,
+    min: 1
   },
+
   price: {
     type: Number,
-    required: true
+    required: true,
+    min: 0
+  },
+
+  spec: {
+    type: String,
+    default: "",
+    maxlength: 100,
+    trim: true
   }
 });
 
@@ -31,7 +43,8 @@ const OrderSchema = new mongoose.Schema(
 
     total: {
       type: Number,
-      required: true
+      required: true,
+      min: 0
     },
 
     status: {
