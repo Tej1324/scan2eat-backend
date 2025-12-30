@@ -26,14 +26,16 @@ const ALLOWED_ORIGINS = [
 ];
 
 /* ================= CORS (FIRST — DO NOT MOVE) ================= */
-app.use(
-  cors({
-    origin: ALLOWED_ORIGINS,
-    credentials: false,
-    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "x-access-token"],
-  })
-);
+const corsOptions = {
+  origin: ALLOWED_ORIGINS,
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "x-access-token"],
+};
+
+app.use(cors(corsOptions));
+
+/* 🔥 THIS FIXES YOUR ERROR (REQUIRED FOR RAILWAY) */
+app.options("*", cors(corsOptions));
 
 /* ================= MIDDLEWARE ================= */
 app.use(express.json({ limit: "100kb" }));
@@ -136,7 +138,7 @@ app.patch("/api/orders/:id", requireCashier, async (req, res) => {
   res.json(order);
 });
 
-/* HEALTH CHECK (REQUIRED FOR RAILWAY) */
+/* HEALTH CHECK */
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
