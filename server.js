@@ -22,25 +22,18 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:5500",
   "https://scan2eat-frontend.vercel.app",
   "https://scan2eat-cashier.netlify.app",
-  "https://scan2eat-kitchen.netlify.app"
+  "https://scan2eat-kitchen.netlify.app",
 ];
 
-/* ================= CORS (MUST BE FIRST) ================= */
+/* ================= CORS (FIRST — DO NOT MOVE) ================= */
 app.use(
   cors({
     origin: ALLOWED_ORIGINS,
+    credentials: false,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "x-access-token"],
   })
 );
-
-/* Explicit OPTIONS support (fixes preflight on Express 5) */
-app.use((req, res, next) => {
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-  next();
-});
 
 /* ================= MIDDLEWARE ================= */
 app.use(express.json({ limit: "100kb" }));
@@ -92,11 +85,14 @@ app.post("/api/orders", async (req, res) => {
   try {
     const { tableId, items } = req.body;
 
-    if (!Number.isInteger(tableId) || !Array.isArray(items) || !items.length) {
+    if (!Number.isInteger(tableId) || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Invalid order" });
     }
 
-    const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+    const total = items.reduce(
+      (sum, item) => sum + item.price * item.qty,
+      0
+    );
 
     const order = await Order.create({
       tableId,
@@ -129,7 +125,9 @@ app.patch("/api/orders/:id", requireCashier, async (req, res) => {
   }
 
   const order = await Order.findById(req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
+  if (!order) {
+    return res.status(404).json({ error: "Order not found" });
+  }
 
   order.status = status;
   await order.save();
@@ -138,7 +136,7 @@ app.patch("/api/orders/:id", requireCashier, async (req, res) => {
   res.json(order);
 });
 
-/* HEALTH CHECK (IMPORTANT FOR RAILWAY) */
+/* HEALTH CHECK (REQUIRED FOR RAILWAY) */
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "ok" });
 });
