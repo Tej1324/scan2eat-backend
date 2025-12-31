@@ -11,6 +11,8 @@ const Order = require("./models/Order");
 const MenuItem = require("./models/MenuItem"); // ✅ NEW
 
 const app = express();
+app.set("trust proxy", 1);
+
 const server = http.createServer(app);
 const cloudinary = require("cloudinary").v2;
 const multer = require("multer");
