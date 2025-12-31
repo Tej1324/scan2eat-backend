@@ -13,7 +13,7 @@ const app = express();
 const server = http.createServer(app);
 
 /* ================= CONFIG ================= */
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 4000;
 
 /* ================= ALLOWED ORIGINS ================= */
 const ALLOWED_ORIGINS = [
