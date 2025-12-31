@@ -24,17 +24,33 @@ const PROD_ORIGINS = [
   "https://scan2eat-kitchen.netlify.app",
 ];
 
+const DEV_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5500",
+  "http://localhost:5500"
+];
+
+
 /* ================= CORS (STRICT PROD + OPEN DEV) ================= */
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (!isProd) return callback(null, true);
-    if (PROD_ORIGINS.includes(origin)) return callback(null, true);
+
+    if (!isProd && DEV_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
+    if (isProd && PROD_ORIGINS.includes(origin)) {
+      return callback(null, true);
+    }
+
     return callback(new Error("CORS blocked"), false);
   },
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-access-token"],
 };
+
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
@@ -59,13 +75,21 @@ const io = new Server(server, {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (!isProd) return callback(null, true);
-      if (PROD_ORIGINS.includes(origin)) return callback(null, true);
+
+      if (!isProd && DEV_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+
+      if (isProd && PROD_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+
       return callback("CORS blocked", false);
     },
     methods: ["GET", "POST"],
   },
 });
+
 
 require("./socket")(io);
 
