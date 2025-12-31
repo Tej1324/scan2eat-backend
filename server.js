@@ -158,6 +158,21 @@ app.patch("/api/orders/:id", requireCashier, async (req, res) => {
   res.json(order);
 });
 
+
+function requireStaff(req, res, next) {
+  const token = req.headers["x-access-token"];
+
+  if (
+    token === process.env.CASHIER_TOKEN ||
+    token === process.env.KITCHEN_TOKEN
+  ) {
+    return next();
+  }
+
+  return res.status(401).json({ error: "Unauthorized" });
+}
+
+
 /* ================= MENU ROUTES (NEW) ================= */
 
 /* CUSTOMER MENU (ONLY AVAILABLE ITEMS) */
@@ -220,4 +235,33 @@ app.get("/health", (req, res) => {
 /* ================= START ================= */
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
+});
+
+/* ================= ANALYTICS ================= */
+
+/* TODAY SALES SUMMARY */
+app.get("/api/analytics/today", requireCashier, async (req, res) => {
+  try {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const orders = await Order.find({
+      status: "completed",
+      createdAt: { $gte: start, $lte: end }
+    });
+
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
+
+    res.json({
+      totalOrders,
+      totalRevenue
+    });
+  } catch (err) {
+    console.error("Analytics error:", err);
+    res.status(500).json({ error: "Analytics failed" });
+  }
 });
