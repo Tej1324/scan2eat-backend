@@ -35,6 +35,7 @@ const DEV_ORIGINS = [
 /* ================= CORS (STRICT PROD + OPEN DEV) ================= */
 const corsOptions = {
   origin: (origin, callback) => {
+    // Allow server-to-server / Railway internal
     if (!origin) return callback(null, true);
 
     if (!isProd && DEV_ORIGINS.includes(origin)) {
@@ -45,11 +46,13 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    return callback(new Error("CORS blocked"), false);
+    // ❌ silently deny, DO NOT throw error
+    return callback(null, false);
   },
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "x-access-token"],
 };
+
 
 
 app.use(cors(corsOptions));
@@ -84,11 +87,12 @@ const io = new Server(server, {
         return callback(null, true);
       }
 
-      return callback("CORS blocked", false);
+      return callback(null, false);
     },
     methods: ["GET", "POST"],
   },
 });
+
 
 
 require("./socket")(io);
