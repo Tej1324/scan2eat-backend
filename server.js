@@ -12,8 +12,8 @@ const Order = require("./models/Order");
 const app = express();
 const server = http.createServer(app);
 
-/* ================= CONFIG ================= */
-const PORT = process.env.PORT || 4000;
+/* ================= START ================= */
+const PORT = process.env.PORT;
 
 /* ================= ALLOWED ORIGINS ================= */
 const ALLOWED_ORIGINS = [
