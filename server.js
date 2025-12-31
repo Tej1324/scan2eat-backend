@@ -12,10 +12,29 @@ const MenuItem = require("./models/MenuItem"); // ✅ NEW
 
 const app = express();
 const server = http.createServer(app);
+const cloudinary = require("cloudinary").v2;
+const multer = require("multer");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+
 
 /* ================= CONFIG ================= */
 const PORT = process.env.PORT;
 const isProd = process.env.NODE_ENV === "production";
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "scan2eat-menu",
+    allowed_formats: ["jpg", "png", "jpeg", "webp"],
+  },
+});
+
+const upload = multer({ storage });
 
 /* ================= PROD ORIGINS ================= */
 const PROD_ORIGINS = [
@@ -25,8 +44,6 @@ const PROD_ORIGINS = [
   "http://127.0.0.1:5500" // TEMP ONLY
 
 ];
-
-
 
 /* ================= CORS (STRICT PROD + OPEN DEV) ================= */
 const corsOptions = {
@@ -181,6 +198,17 @@ app.patch("/api/menu/:id", requireCashier, async (req, res) => {
   io.emit("menu:update");
   res.json(item);
 });
+
+app.post(
+  "/api/menu/upload",
+  requireCashier,
+  upload.single("image"),
+  (req, res) => {
+    res.json({
+      imageUrl: req.file.path, // Cloudinary URL
+    });
+  }
+);
 
 /* ================= HEALTH ================= */
 app.get("/health", (req, res) => {
