@@ -8,26 +8,28 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 const Order = require("./models/Order");
-const MenuItem = require("./models/MenuItem"); // ✅ NEW
+const MenuItem = require("./models/MenuItem");
+
+const cloudinary = require("cloudinary").v2;
+const multer = require("multer");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
 const app = express();
 app.set("trust proxy", 1);
 
 const server = http.createServer(app);
-const cloudinary = require("cloudinary").v2;
-const multer = require("multer");
-const { CloudinaryStorage } = require("multer-storage-cloudinary");
-
 
 /* ================= CONFIG ================= */
 const PORT = process.env.PORT;
 const isProd = process.env.NODE_ENV === "production";
 
+/* ================= CLOUDINARY ================= */
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
 const storage = new CloudinaryStorage({
   cloudinary,
   params: {
@@ -43,11 +45,10 @@ const PROD_ORIGINS = [
   "https://scan2eat-frontend.vercel.app",
   "https://scan2eat-cashier.netlify.app",
   "https://scan2eat-kitchen.netlify.app",
-  "http://127.0.0.1:5500" // TEMP ONLY
-
+  "http://127.0.0.1:5500"
 ];
 
-/* ================= CORS (STRICT PROD + OPEN DEV) ================= */
+/* ================= CORS ================= */
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
@@ -110,8 +111,20 @@ function requireCashier(req, res, next) {
   next();
 }
 
-/* ================= ORDER ROUTES (UNCHANGED) ================= */
+function requireStaff(req, res, next) {
+  const token = req.headers["x-access-token"];
+  if (
+    token === process.env.CASHIER_TOKEN ||
+    token === process.env.KITCHEN_TOKEN
+  ) {
+    return next();
+  }
+  return res.status(401).json({ error: "Unauthorized" });
+}
 
+/* ================= ORDER ROUTES ================= */
+
+/* CREATE ORDER */
 app.post("/api/orders", async (req, res) => {
   try {
     const { tableId, items } = req.body;
@@ -132,60 +145,18 @@ app.post("/api/orders", async (req, res) => {
     io.emit("order:new", order);
     res.status(201).json(order);
   } catch (err) {
-    console.error("❌ Order error:", err);
+    console.error("Order create error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
+/* GET ORDERS */
 app.get("/api/orders", async (req, res) => {
   const orders = await Order.find().sort({ createdAt: 1 });
   res.json(orders);
 });
 
-function requireStaff(req, res, next) {
-  const token = req.headers["x-access-token"];
-
-  if (
-    token === process.env.CASHIER_TOKEN ||
-    token === process.env.KITCHEN_TOKEN
-  ) {
-    return next();
-  }
-
-  return res.status(401).json({ error: "Unauthorized" });
-}
-
-
-/* ================= MENU ROUTES (NEW) ================= */
-
-/* CUSTOMER MENU (ONLY AVAILABLE ITEMS) */
-app.get("/api/menu", async (req, res) => {
-  const items = await MenuItem.find({ available: true }).sort({ createdAt: 1 });
-  res.json(items);
-});
-
-/* CASHIER MENU (ALL ITEMS) */
-app.get("/api/menu/all", requireCashier, async (req, res) => {
-  const items = await MenuItem.find().sort({ createdAt: 1 });
-  res.json(items);
-});
-
-/* ADD MENU ITEM */
-app.post("/api/menu", requireCashier, async (req, res) => {
-  const { name, price, description, imageUrl } = req.body;
-
-  const item = await MenuItem.create({
-    name,
-    price,
-    description,
-    imageUrl,
-  });
-
-  io.emit("menu:update"); // 🔄 future live refresh
-  res.status(201).json(item);
-});
-
-/* TOGGLE AVAILABILITY */
+/* UPDATE STATUS ONLY */
 app.patch("/api/orders/:id", requireStaff, async (req, res) => {
   const allowed = ["pending", "cooking", "ready", "completed"];
 
@@ -194,9 +165,7 @@ app.patch("/api/orders/:id", requireStaff, async (req, res) => {
   }
 
   const order = await Order.findById(req.params.id);
-  if (!order) {
-    return res.status(404).json({ error: "Order not found" });
-  }
+  if (!order) return res.status(404).json({ error: "Order not found" });
 
   order.status = req.body.status;
   await order.save();
@@ -205,90 +174,104 @@ app.patch("/api/orders/:id", requireStaff, async (req, res) => {
   res.json(order);
 });
 
+/* ✏️ EDIT ORDER (ITEMS + TOTAL) */
+app.patch("/api/orders/:id/edit", requireCashier, async (req, res) => {
+  try {
+    const { items, total } = req.body;
 
+    if (!Array.isArray(items) || !items.length || typeof total !== "number") {
+      return res.status(400).json({ error: "Invalid edit payload" });
+    }
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    order.items = items;
+    order.total = total;
+    await order.save();
+
+    io.emit("order:update", order);
+    res.json(order);
+  } catch (err) {
+    console.error("Edit order error:", err);
+    res.status(500).json({ error: "Edit failed" });
+  }
+});
+
+/* 🗑 DELETE ORDER */
+app.delete("/api/orders/:id", requireCashier, async (req, res) => {
+  try {
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    io.emit("order:update");
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete order error:", err);
+    res.status(500).json({ error: "Delete failed" });
+  }
+});
+
+/* ================= MENU ROUTES ================= */
+
+app.get("/api/menu", async (req, res) => {
+  const items = await MenuItem.find({ available: true }).sort({ createdAt: 1 });
+  res.json(items);
+});
+
+app.get("/api/menu/all", requireCashier, async (req, res) => {
+  const items = await MenuItem.find().sort({ createdAt: 1 });
+  res.json(items);
+});
+
+app.post("/api/menu", requireCashier, async (req, res) => {
+  const { name, price, description, imageUrl } = req.body;
+  const item = await MenuItem.create({ name, price, description, imageUrl });
+  io.emit("menu:update");
+  res.status(201).json(item);
+});
 
 app.post(
   "/api/menu/upload",
   requireCashier,
   upload.single("image"),
   (req, res) => {
-    res.json({
-      imageUrl: req.file.path, // Cloudinary URL
-    });
+    res.json({ imageUrl: req.file.path });
   }
 );
 
-/* ================= HEALTH ================= */
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok" });
+app.patch("/api/menu/:id", requireCashier, async (req, res) => {
+  const item = await MenuItem.findByIdAndUpdate(
+    req.params.id,
+    { available: req.body.available },
+    { new: true }
+  );
+  res.json(item);
 });
+
+/* ================= ANALYTICS ================= */
+
+app.get("/api/analytics/today", requireCashier, async (req, res) => {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+
+  const orders = await Order.find({
+    status: "completed",
+    createdAt: { $gte: start, $lte: end },
+  });
+
+  res.json({
+    totalOrders: orders.length,
+    totalRevenue: orders.reduce((s, o) => s + o.total, 0),
+  });
+});
+
+/* ================= HEALTH ================= */
+app.get("/health", (_, res) => res.json({ status: "ok" }));
 
 /* ================= START ================= */
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
-/* ================= ANALYTICS ================= */
-
-/* TODAY SALES SUMMARY */
-app.get("/api/analytics/today", requireCashier, async (req, res) => {
-  try {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-
-    const orders = await Order.find({
-      status: "completed",
-      createdAt: { $gte: start, $lte: end }
-    });
-
-    const totalOrders = orders.length;
-    const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
-
-    res.json({
-      totalOrders,
-      totalRevenue
-    });
-  } catch (err) {
-    console.error("Analytics error:", err);
-    res.status(500).json({ error: "Analytics failed" });
-  }
-});
-
-/* ================= ANALYTICS RANGE ================= */
-app.get("/api/analytics/range", requireCashier, async (req, res) => {
-  try {
-    const { from, to } = req.query;
-
-    if (!from || !to) {
-      return res.status(400).json({ error: "Missing date range" });
-    }
-
-    const start = new Date(from);
-    start.setHours(0, 0, 0, 0);
-
-    const end = new Date(to);
-    end.setHours(23, 59, 59, 999);
-
-    const orders = await Order.find({
-      status: "completed",
-      createdAt: { $gte: start, $lte: end }
-    }).sort({ createdAt: 1 });
-
-    const totalOrders = orders.length;
-    const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
-
-    res.json({
-      totalOrders,
-      totalRevenue,
-      orders
-    });
-
-  } catch (err) {
-    console.error("Analytics range error:", err);
-    res.status(500).json({ error: "Analytics failed" });
-  }
-});
-
