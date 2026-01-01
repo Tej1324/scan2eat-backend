@@ -203,18 +203,22 @@ app.post("/api/menu", requireCashier, async (req, res) => {
 });
 
 /* TOGGLE AVAILABILITY */
-app.patch("/api/menu/:id", requireCashier, async (req, res) => {
-  const { available } = req.body;
+app.patch("/api/orders/:id", requireStaff, async (req, res) => {
+  const allowed = ["pending", "cooking", "ready", "completed"];
+  if (!allowed.includes(req.body.status)) {
+    return res.status(400).json({ error: "Invalid status" });
+  }
 
-  const item = await MenuItem.findByIdAndUpdate(
-    req.params.id,
-    { available },
-    { new: true }
-  );
+  const order = await Order.findById(req.params.id);
+  if (!order) return res.status(404).json({ error: "Order not found" });
 
-  io.emit("menu:update");
-  res.json(item);
+  order.status = req.body.status;
+  await order.save();
+
+  io.emit("order:update", order);
+  res.json(order);
 });
+
 
 app.post(
   "/api/menu/upload",
