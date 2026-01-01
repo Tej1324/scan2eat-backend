@@ -256,3 +256,39 @@ app.get("/api/analytics/today", requireCashier, async (req, res) => {
     res.status(500).json({ error: "Analytics failed" });
   }
 });
+
+/* ================= ANALYTICS RANGE ================= */
+app.get("/api/analytics/range", requireCashier, async (req, res) => {
+  try {
+    const { from, to } = req.query;
+
+    if (!from || !to) {
+      return res.status(400).json({ error: "Missing date range" });
+    }
+
+    const start = new Date(from);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(to);
+    end.setHours(23, 59, 59, 999);
+
+    const orders = await Order.find({
+      status: "completed",
+      createdAt: { $gte: start, $lte: end }
+    }).sort({ createdAt: 1 });
+
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
+
+    res.json({
+      totalOrders,
+      totalRevenue,
+      orders
+    });
+
+  } catch (err) {
+    console.error("Analytics range error:", err);
+    res.status(500).json({ error: "Analytics failed" });
+  }
+});
+
