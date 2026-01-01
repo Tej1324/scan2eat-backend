@@ -142,23 +142,6 @@ app.get("/api/orders", async (req, res) => {
   res.json(orders);
 });
 
-app.patch("/api/orders/:id", requireCashier, async (req, res) => {
-  const allowed = ["pending", "cooking", "ready", "completed"];
-  if (!allowed.includes(req.body.status)) {
-    return res.status(400).json({ error: "Invalid status" });
-  }
-
-  const order = await Order.findById(req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
-
-  order.status = req.body.status;
-  await order.save();
-
-  io.emit("order:update", order);
-  res.json(order);
-});
-
-
 function requireStaff(req, res, next) {
   const token = req.headers["x-access-token"];
 
@@ -205,12 +188,15 @@ app.post("/api/menu", requireCashier, async (req, res) => {
 /* TOGGLE AVAILABILITY */
 app.patch("/api/orders/:id", requireStaff, async (req, res) => {
   const allowed = ["pending", "cooking", "ready", "completed"];
+
   if (!allowed.includes(req.body.status)) {
     return res.status(400).json({ error: "Invalid status" });
   }
 
   const order = await Order.findById(req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
+  if (!order) {
+    return res.status(404).json({ error: "Order not found" });
+  }
 
   order.status = req.body.status;
   await order.save();
@@ -218,6 +204,7 @@ app.patch("/api/orders/:id", requireStaff, async (req, res) => {
   io.emit("order:update", order);
   res.json(order);
 });
+
 
 
 app.post(
